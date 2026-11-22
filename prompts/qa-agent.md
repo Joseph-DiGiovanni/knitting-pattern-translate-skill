@@ -1,0 +1,49 @@
+# QA brief (paste as task `context`; fill in W, KPT, {LANG}; give each subagent its own page list)
+
+A {LANG} pattern PDF was translated to English in place: source text was removed (text-layer redaction, or a cover box for OCR'd text) and English drawn where it was. Compare translated pages with the originals and report machine-applicable findings. Check meaning, style AND layout: the English must sit where the source sat, aligned the same way, in the same weight, slant, colour and relative size, inside the same space, without touching other artwork.
+
+Commands (N = PDF page index = the NNN in file names, NOT the number printed on the page; rect in PDF points x0,y0,x1,y1; y down; landscape pages are wider than they are tall). Use these instead of writing your own scripts, reading the tool's source, or searching for fonts:
+- Whole page, 100 dpi: translated `W/png/pNNN.png`, original `W/orig/pNNN.png`. At 100 dpi pt = px / 1.389.
+- `KPT units -w W N…`: every unit of the page(s): `ids | source bbox | size, weight | source (style-tagged) => current English` (`*` = already fixed, `L` = layout override), after a `styles:` line saying what each `<sN>` means. Read this once per page instead of the JSON files.
+- `KPT crop -w W N x0,y0,x1,y1`: one 250-dpi PNG under `W/crops/` with the translation on top and the original below, same scale, split by a 6px red rule; crop px → pt: x0 + px*0.288 (original half: subtract its top offset first). `--trans` / `--orig` give one side only. Every zoom goes through this command, so the main agent can open the same files.
+- `KPT ink -w W N rect [rect…]` (add `--orig` for the original): tight bbox in pt of the ink inside each rect — measure rendered English, free space or artwork with it, not with pixel scripts.
+- `KPT width -w W N ids "English" ["shorter English"…]`: width in pt of each wording in the unit's font, size and style tags, next to the source line's width — check a shorter wording fits before proposing it.
+
+Two passes per page:
+1. Full-page layout pass: view the translated and original page at 100 dpi side by side and compare the page as a whole: tables (column edges, row baselines, cell alignment), label columns and lists (common left edge, equal spacing), headings, captions, legends and keys, blocks of text and the spacing between blocks. Anything that lines up in the original must line up in the translation.
+2. Detail pass: zoom wherever something looks wrong, and always on text inside shapes (boxes, pills, buttons, tags), labels inside diagrams, tilted labels, legends and keys, and lines mixing bold/coloured/underlined/differently sized words. One crop covers translation and original; measure with `ink` (±1pt).
+Pages that repeat another page's layout (size variants of one chart, repeated legends): check the first one fully; on the others, zoom on the title line and the legend or key (their English and neighbours differ per page, so collisions and shrunk entries differ too) and wherever `units` shows different source text or English, and repeat the first page's findings with that page's bboxes.
+
+Checks (compare with the original):
+- Alignment: text centred in a shape, table cell or under a heading must still be centred (equal blank space left and right, within ~1pt); right-aligned text stays right-aligned; columns of labels and table cells keep their common edge.
+- Containment: English must stay inside the space the source used: inside its shape or cell, between diagram lines, not past the page's text margins.
+- No overlap: English must not cross or touch other text, lines, outlines, arrows, symbols, swatches, photos, or grid cells. Tilted labels must follow the original angle and stay clear of the shapes next to them.
+- Style: bold, italic, underline, colour and relative size must match the original word for word: bold labels stay bold, coloured figures keep their colours, small notes stay small, underlined words stay underlined, and plain text must not turn bold. Some words wrong: WRONG with the English re-tagged (see below). A whole unit in the wrong weight, slant or colour — including English that is present but invisible or nearly so (drawn in its background's colour, e.g. a label that looks empty) — is STYLE with the original's colour.
+- Attached graphics: underlines, leader lines and arrows that tie words to a note, callout or other element must still start at the same words in the English and end at the same target. When the words moved and the graphic did not, report DAMAGE only if the original artwork is lost; otherwise WRONG on the note with shorter English, or FIT giving the note a free area next to the words' new position.
+- Consistent sizing: all lines of one paragraph or list item must be the same text size and line spacing, as in the original. A paragraph whose lines came out at different sizes (usually because it was translated as several pieces around an inline graphic) is a MERGE.
+- Movable graphics: an inline graphic (a small shape or glyph inside a line of running text) only marks a word's place, so its absolute position does not matter. When it forces awkward gaps, split text or small text around it, MERGE the paragraph and let it move with the text. Graphics whose position does matter (diagram labels, symbols in a grid, arrows pointing at something) must stay put.
+- Readability: text must not be shrunk while blank space is available. A label may run past the original text's box, or wrap onto a second line, into blank space next to it (clear of other text and artwork). Text below ~3pt, or clearly smaller than the original with blank space beside it, is a problem: fix it with a larger free area (FIT, may be two lines tall) or shorter English (standard abbreviations), never by accepting overlap. Shorter English keeps every word that tells similar labels apart (front/back, left/right, sizes, directions): abbreviate such words, never drop them.
+- Legends and keys: each entry must name the stitch or term in words ("knit 2 together"); an entry that only repeats the abbreviation already shown in its symbol is a WRONG.
+
+Style tags: the English in `W/tr` may wrap words in `<sN>…</sN>` (N from the source's `styled`/`styles` on that page) to give them that run's weight, slant, colour or size. When a correction (WRONG, MERGE) involves styled words, write the corrected English with the same tags; quote the current English as rendered, without tags.
+
+Report only:
+1. SRC — {LANG} (or other CJK) text still visible (ignore symbols inside diagram grids; ignore hashtags, which stay in the source script on purpose). TIGHT bbox around the remaining glyphs only (a background box is painted exactly there), H or V, the source text, concise English (empty if the English is already drawn next to it).
+2. WRONG — English contradicting the original (wrong number, meaning, side, direction, lost symbol, wrong style of some words), or English that cannot fit its space without overlapping/shrinking below ~3pt. bbox of the rendered English, the current English (verbatim), corrected English: exactly the text to print, different from the current English (shorter when space is the problem; with style tags when style is the problem). A problem that is not the wording — colour, size, position — is STYLE, FIT or ALIGN, never a WRONG repeating the same text. In a multi-line unit, either quote only the wrong words and give only their replacement, or quote and rewrite the whole unit — never quote a fragment and rewrite everything. Never put remarks, reasons or instructions into the corrected English; they would be printed.
+3. ALIGN — single-line English whose alignment differs from the original (e.g. off-centre in a shape, off the column edge). bbox of the rendered English, `left|center|right` as in the original.
+4. FIT — English that overlaps other artwork, or is shrunk although nearby blank space would hold it at the original size. bbox of the rendered English, then the blank area x0,y0,x1,y1 the English may occupy (measured on a zoom: clear of every line, outline, arrow and other text; may extend past the original box and be two lines tall). Text is drawn inside that box, wrapped if it is tall enough, shrunk only if needed. Horizontal labels only; for tilted labels use WRONG with shorter English.
+5. MERGE — one paragraph rendered as pieces (uneven sizes, gaps around an inline graphic). bbox covering the whole paragraph in the translated page, then the English for the whole paragraph with the text of each inline graphic (text inside a small shape, a `G` line in the prompt) written in double brackets, [[like this]], where it belongs in the sentence (the graphic is moved there). Symbols and coloured marks that are plain characters in the text get no brackets.
+6. DAMAGE — an original non-text element (number, symbol, swatch, arrow, line) erased/clipped where restoring the ORIGINAL artwork in that bbox brings back no {LANG} text and does not hide English. Tight bbox.
+7. STYLE — a whole unit drawn in the wrong weight, slant or colour. bbox of the rendered English, then the original's style as any of `bold|regular`, `italic|upright`, `#rrggbb` (colour measured on the original zoom).
+Skip wording preferences and anything that is fine.
+
+Output exactly, one finding per line, nothing else. End every finding with the path of the crop that shows it, so the main agent can check it without new zooms:
+`N | SRC | x0,y0,x1,y1 | H|V | <source text> | <english> | <png>`
+`N | WRONG | x0,y0,x1,y1 | <current english> | <corrected english> | <png>`
+`N | ALIGN | x0,y0,x1,y1 | left|center|right | <png>`
+`N | FIT | x0,y0,x1,y1 | x0,y0,x1,y1 | <png>`
+`N | MERGE | x0,y0,x1,y1 | <english with [[inline graphic text]]> | <png>`
+`N | DAMAGE | x0,y0,x1,y1 | <description> | <png>`
+`N | STYLE | x0,y0,x1,y1 | <bold|regular> <italic|upright> <#rrggbb> | <png>`
+`N | OK`
+Do not edit files.
